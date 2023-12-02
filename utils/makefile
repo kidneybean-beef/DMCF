@@ -1,6 +1,10 @@
-cudalib = /usr/local/cuda/lib64
-cudainc = /usr/local/cuda/include
-cudabin = /usr/local/cuda/bin
+cudalib = ~/miniconda3/envs/DMCF/lib
+cudainc = ~/miniconda3/envs/DMCF/include
+cudabin = ~/miniconda3/envs/DMCF/bin
+
+# cudalib = /usr/local/cuda/lib64
+# cudainc = /usr/local/cuda/include
+# cudabin = /usr/local/cuda/bin
 
 $(eval TF_CFLAGS := $(shell python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_compile_flags()))'))
 $(eval TF_LFLAGS := $(shell python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_link_flags()))'))
@@ -10,7 +14,7 @@ tools: tools/sampling_so.so tools/nn_distance_so.so tools/tf_approxmatch_so.so
 
 
 tools/sampling_so.so: tools/sampling.cu.o tools/sampling.cpp
-	g++ -std=c++11 tools/sampling.cpp tools/sampling.cu.o -o tools/sampling_so.so -shared -fPIC $(TF_CFLAGS) $(TF_LFLAGS) -I$(cudainc) -lcudart -L$(cudalib) -O2
+	g++ -std=c++11 tools/sampling.cpp tools/sampling.cu.o -o tools/sampling_so.so -shared -fPIC $(TF_CFLAGS) $(TF_LFLAGS) -I $(cudainc) -lcudart -L $(cudalib) -O2
 
 tools/sampling.cu.o: tools/sampling.cu
 	$(cudabin)/nvcc -std=c++11 -c -o tools/sampling.cu.o tools/sampling.cu -DGOOGLE_CUDA=1 -x cu -Xcompiler -fPIC -O2 -D_FORCE_INLINES 

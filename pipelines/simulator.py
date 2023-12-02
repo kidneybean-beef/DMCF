@@ -515,4 +515,4 @@ class Simulator(BasePipeline):
             self.run_valid(epoch)
             self.save_logs(self.writer, epoch, [self.valid_loss], "valid")
 
-            self.run_test(epoch)
+            # self.run_test(epoch)

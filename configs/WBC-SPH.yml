@@ -8,13 +8,16 @@ model:
   name: SymNet
 
   ckpt_path: # path to checkpoint
+  # feature dimensions of CConv in the first layer L1: 16,8,4,4
+  # feature dimensions of L2 and L3: 32,16,8,4
+  # feature dimensions of L4: 32,2
   layer_channels: [[[8]], [[16], [8], [4], [4]], [[32], [16], [8], [4]], [[32], [16], [8], [4]], [[32]], [[2]]]
   kernel_size: [1, 8, 8]
   sym_kernel_size: [1, 8, 8]
   coordinate_mapping: ball_to_cube_volume_preserving
   interpolation: linear
-  window: poly6
-  window_sym: peak
+  window: poly6 # [29], for all CConv layers, kernel size 8 in all dimensions
+  window_sym: peak # [21], kernel of size 8 for ASCC layer, prevents clustering of particles
   window_dens: poly6
   strides: [1, 2, 4, 8] # sub-sampling factor for multi-scaling
   particle_radii: [0.01, 0.02, 0.04, 0.08]
@@ -22,7 +25,7 @@ model:
   grav: -9.81
   out_scale: [6.25e-06, 6.25e-06, 0.0] # 2D output
   centralize: True
-  voxel_size: [0.005, 0.005, 0.0]
+  voxel_size: [0.005, 0.005, 0.0] # given by r/2, then divided by scaling factor of corresponding branch
   sym_axis: 1
   rest_dens: 4.0
   circular: False
@@ -52,13 +55,15 @@ pipeline:
   batch_size: 2
   iter: 1000
   
+  # rollout of N=3 frames to N=5 frames from step 15k onwards
   window_bnds: [15000]
-  windows: [3, 5] 
+  windows: [3, 5]
   time_blend: 200
 
   #max_err: 0.0025 # 1/2 voxel
   max_dens_err: 0.2 # 20% density error
 
+  # preprocessing starting from step 10k with Wmax= 5, from step 20k and 30k then double the value of Wmax
   warm_up_bnds: [
       10000,
       20000,
