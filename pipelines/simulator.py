@@ -24,6 +24,10 @@ from utils.evaluation_helper import compare_dist, chamfer_distance, distance, me
 
 import warnings
 
+from thirdparty.helper import ModelOptimizer
+
+PRECISION = "FP32"
+
 warnings.filterwarnings('ignore')
 
 logging.setLogRecordFactory(LogRecord)
@@ -53,9 +57,27 @@ class Simulator(BasePipeline):
                          device=device,
                          split=split,
                          **kwargs)
+        # self.prev_model=None
+        # self.prev_run_inference=None
 
     @tf.function(experimental_relax_shapes=True)
     def run_inference(self, inputs):
+        """
+        Run inference on a given data.
+
+        Args:
+            data: A raw data.
+        Returns:
+            Returns the inference results.
+        """
+        results = []
+        for bi in range(len(inputs)):
+            pos, vel = self.model(inputs[bi], training=False)
+            results.append([pos, vel] + inputs[bi][2:])
+        return results
+
+    @tf.function(experimental_relax_shapes=True)
+    def run_inference_retraced(self, inputs):
         """
         Run inference on a given data.
 
@@ -108,6 +130,44 @@ class Simulator(BasePipeline):
 
         return results
 
+    def run_rollout_retraced(self, inputs, timesteps=2):
+        """
+        Run rollout on a given data.
+
+        Args:
+            data: A raw data.
+        Returns:
+            Returns the inference results.
+        """
+
+        inputs = [ [
+            tf.convert_to_tensor(data['pos'][0]),
+            tf.convert_to_tensor(data['vel'][0]),
+            tf.convert_to_tensor(data["grav"][0])
+            if data["grav"][0] is not None else None, None,
+            tf.convert_to_tensor(data["box"][0]),
+            tf.convert_to_tensor(data["box_normals"][0])
+        ] for data in inputs]
+        results = [[] for _ in range(len(inputs))]
+
+        # dummy init
+        self.run_inference_retraced(inputs[:1])
+
+        timing = []
+        for i in range(len(inputs)):
+            results[i].append(inputs[i])
+        for t in tqdm(range(timesteps - 1), "rollout"):
+            start = time.time()
+            for i in range(len(inputs)):
+                inputs[i] = self.run_inference_retraced(inputs[i:i + 1])[0]
+            end = time.time()
+            timing.append(end - start)
+            for i in range(len(inputs)):
+                results[i].append(inputs[i])
+        log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))
+
+        return results
+
     def run_test(self, epoch=None):
         """
         Run test with test data split.
@@ -131,38 +191,76 @@ class Simulator(BasePipeline):
 
         log.info("Started testing")
 
-        results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
+        with tf.profiler.experimental.Profile(cfg.profile_dir):
+            results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
+            pass
 
-        for i in tqdm(range(len(results)), desc='write out'):
-            data = test_data[i]
-            pos = np.stack(r[0] for r in results[i])
+        ### CPU time for a sigle step ###
+        # start = time.time()
+        # for bi in range(len(inputs[:1])):
+        #     pos, vel = self.model(inputs[bi], training=False)
+        # end = time.time()
+        # elapsed_time = end - start
+        # log.info("inference time: %f" % elapsed_time)
+        ### CPU time for a sigle step ###
 
-            out_dir = os.path.join(self.cfg.out_dir, "visual", "%04d" % i)
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
+        # input shape specification: [pos,vel,grav,None(another fluid feature),box,box_normal(box feature)]
+        spec = [tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=None, dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32)]
 
-            output = [(pos, {
-                "name": "pred",
-                "type": "PARTICLE"
-            }), (data['pos'], {
-                "name": "gt",
-                "type": "PARTICLE"
-            }), (data['box'][0], {
-                "name": "bnd",
-                "type": "PARTICLE"
-            })]
+        call=model.call.get_concrete_function(spec,training=False)
+        # print(call)
 
-            write_results(os.path.join(out_dir, '%04d.hdf5' % epoch),
-                          self.model.name, output)
+        model_dir = 'saved_models/model'
+        tf.saved_model.save(model,model_dir,signatures=call)
 
-            for f in glob(os.path.join(out_dir, '*.hdf5')):
-                if f != os.path.join(out_dir, '%04d.hdf5' % epoch):
-                    log.info("Remove %s" %
-                             os.path.join(out_dir, '%04d.hdf5' % epoch))
-                    os.remove(f)
+        opt_model = ModelOptimizer(model_dir)
+        model_fp32 = opt_model.convert(output_saved_model_dir=model_dir+'_trt_FP_32', precision=PRECISION)
 
-        if cfg.get('test_compute_metric', False):
-            self.run_valid(epoch)
+        # self.prev_model =self.model
+        # self.prev_run_inference=self.run_inference
+        self.model=model_fp32.loaded_model_fn.call
+
+        with tf.profiler.experimental.Profile(cfg.profile_dir):
+            results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
+            pass
+
+        ### WRITE OUT ###
+        # for i in tqdm(range(len(results)), desc='write out'):
+        #     data = test_data[i]
+        #     pos = np.stack(r[0] for r in results[i])
+
+        #     out_dir = os.path.join(self.cfg.out_dir, "visual", "%04d" % i)
+        #     if not os.path.exists(out_dir):
+        #         os.makedirs(out_dir)
+
+        #     output = [(pos, {
+        #         "name": "pred",
+        #         "type": "PARTICLE"
+        #     }), (data['pos'], {
+        #         "name": "gt",
+        #         "type": "PARTICLE"
+        #     }), (data['box'][0], {
+        #         "name": "bnd",
+        #         "type": "PARTICLE"
+        #     })]
+
+        #     write_results(os.path.join(out_dir, '%04d.hdf5' % epoch),
+        #                   self.model.name, output)
+
+        #     for f in glob(os.path.join(out_dir, '*.hdf5')):
+        #         if f != os.path.join(out_dir, '%04d.hdf5' % epoch):
+        #             log.info("Remove %s" %
+        #                      os.path.join(out_dir, '%04d.hdf5' % epoch))
+        #             os.remove(f)
+
+        # if cfg.get('test_compute_metric', False):
+        #     self.run_valid(epoch)
+        ### WRITE OUT ###
 
     def run_valid(self, epoch=None):
         model = self.model

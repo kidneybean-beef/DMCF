@@ -19,7 +19,7 @@ Please cite [our paper](https://openreview.net/pdf?id=6niwHlzh10U) if you find t
 
 ## Dependencies and Setup
 
-Used environment: python3.7 with CUDA 11.3 and CUDNN 8.0.
+Used environment: python3.8 with CUDA 11.2.1, CUDNN 8.1.1, tensorRT 7.2.3.
 - Install libcap-dev: ```sudo apt install libcap-dev```
 - Install cmake: ```sudo apt install cmake```
 - Update pip: ```pip install --upgrade pip```

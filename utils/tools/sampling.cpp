@@ -44,7 +44,8 @@ REGISTER_OP("ProbSample")
     // batch_size * npoints
     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims2, 0), c->Dim(dims2, 1)});
     c->set_output(0, output);
-    return Status::OK();
+    // return Status::OK();
+    return Status();
   });
 REGISTER_OP("FarthestPointSample")
   .Input("inp: float32")

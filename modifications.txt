@@ -1,0 +1,8 @@
+Remember to change the cuda 'lib', 'include', 'bin' path to your actual cuda installation in 'utils/Makefile'.
+
+Due to some unknown reason, the warning/error/info messages by the tensorRT is brocken, and the modifications below have to be implemented to visualise the tensorRT messages.
+
+tensorflow/python/compiler/tensorrt/trt_convert.py: line 904 in '_get_engine_dtypes_from_node(node, key)':
+'return [dtype.str() for dtype in node.attr[key].list.type]' -> 'return [dtypes.as_dtype(dtype).name for dtype in node.attr[key].list.type]'
+
+

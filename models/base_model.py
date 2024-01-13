@@ -20,6 +20,8 @@ class BaseModel(ABC, tf.keras.Model):
         super().__init__(name=name)
         self.cfg = Config(kwargs)
 
+    # to save the call function in the saved model, it has to be declared as '@tf.function'
+    @tf.function
     def call(self, data, training=True, **kwargs):
         d = self.transform(data, training=training, **kwargs)
         x = self.preprocess(d, training=training, **kwargs)
