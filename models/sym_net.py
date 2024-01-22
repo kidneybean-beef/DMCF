@@ -52,13 +52,28 @@ class SymNet(HRNet):
                                   circular=self.circular)
             self.sym_convs.append(conv)
 
-    def forward(self, prev, data, training=True, **kwargs):
-        pos, feats, idx, dens = prev
+    # def forward(self, prev, data, training=True, **kwargs):
+    #     pos, feats, idx, dens = prev
 
-        ans = super().forward(prev, data, training, **kwargs)
+    #     ans = super().forward(prev, data, training, **kwargs)
+
+    #     if not self.use_bnds:
+    #         ans = tf.concat([ans, feats[tf.shape(pos[0])[0]:]], axis=0)
+
+    #     ext = tf.constant(self.particle_radii[0]) * 2
+    #     for conv in self.sym_convs:
+    #         ans = tf.keras.activations.relu(ans)
+    #         ans = conv(ans * self.part_scale, self.all_pos, self.all_pos, ext,
+    #                    None)
+
+    #     return self.act(ans)
+    
+    def forward(self, dilated_pos, fluid_feats, idx, dens, pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans, training=True, **kwargs):
+
+        ans = super().forward(dilated_pos, fluid_feats, idx, dens, pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans, training, **kwargs)
 
         if not self.use_bnds:
-            ans = tf.concat([ans, feats[tf.shape(pos[0])[0]:]], axis=0)
+            ans = tf.concat([ans, fluid_feats[tf.shape(dilated_pos[0])[0]:]], axis=0)
 
         ext = tf.constant(self.particle_radii[0]) * 2
         for conv in self.sym_convs:

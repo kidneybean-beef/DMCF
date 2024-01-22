@@ -95,6 +95,7 @@ pipeline:
 
   main_log_dir: ./logs
   train_sum_dir: ./train_log
+  profile_dir: ./profile_log
   output_dir: ./output
   save_ckpt_freq: 1
 

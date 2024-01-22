@@ -66,8 +66,74 @@ class HRNet(PBFNet):
                             activation=None)
                         self.denses[-1][-1][-1].append(dense)
 
-    def forward(self, prev, data, training=True, **kwargs):
-        pos, feats, idx, dens = prev
+    # def forward(self, prev, data, training=True, **kwargs):
+    #     pos, feats, idx, dens = prev
+
+    #     if not self.use_bnds:
+    #         feats = feats[:tf.shape(pos[0])[0]]
+
+    #     # compute the extent of the filters (the diameter)
+    #     filter_extent = tf.constant(self.particle_radii) * 2
+
+    #     ans_convs = [[feats]]
+    #     for layer in range(len(self.convs)):
+    #         ans = []
+    #         for scale in range(len(self.convs[layer])):
+    #             importance = self.part_scale if scale == 0 else 1.0
+    #             inp = []
+    #             for inp_scale in range(len(ans_convs[-1])):
+    #                 feats = relu(ans_convs[-1][inp_scale])
+    #                 ext = filter_extent[max(inp_scale, scale)]
+    #                 if self.dens_norm and inp_scale < len(dens):
+    #                     feats = tf.concat([feats, feats / dens[inp_scale]**2],
+    #                                       axis=-1)
+    #                 ans_conv = self.convs[layer][scale][0][inp_scale](
+    #                     feats * importance, pos[inp_scale], pos[scale], ext,
+    #                     None)
+    #                 if layer < len(self.denses):
+    #                     if scale == inp_scale:
+    #                         ans_conv += self.denses[layer][scale][0][
+    #                             inp_scale](feats)
+    #                         if ans_conv.shape[-1] == ans_convs[-1][
+    #                                 scale].shape[-1]:
+    #                             ans_conv += ans_convs[-1][scale]
+    #                     elif self.voxel_size is None:
+    #                         if scale > inp_scale:
+    #                             for i in range(inp_scale, scale):
+    #                                 feats = tf.gather(feats, idx[i + 1][0])
+    #                             ans_conv += self.denses[layer][scale][0][
+    #                                 inp_scale](feats)
+    #                         else:
+    #                             ind = idx[scale + 1][0]
+    #                             for i in range(scale + 1, inp_scale):
+    #                                 ind = tf.gather(ind, idx[i + 1][0])
+    #                             ans_conv = tf.tensor_scatter_nd_add(
+    #                                 ans_conv, tf.expand_dims(ind, -1),
+    #                                 self.denses[layer][scale][0][inp_scale](
+    #                                     feats))
+    #                 inp.append(ans_conv)
+    #             if self.add_merge:
+    #                 ans.append(tf.math.add_n(inp))
+    #             else:
+    #                 ans.append(tf.concat(inp, axis=-1))
+
+    #             for i in range(1, len(self.convs[layer][scale])):
+    #                 ans_conv = self.convs[layer][scale][i][0](
+    #                     ans[-1] * importance, pos[scale], pos[scale], ext,
+    #                     None)
+    #                 ans_dens = self.denses[layer][scale][i][0](ans[-1])
+    #                 ans_conv += ans_dens
+    #                 if len(ans_convs[-1]) > scale and ans_conv.shape[
+    #                         -1] == ans_convs[-1][scale].shape[-1]:
+    #                     ans_conv += ans_convs[-1][scale]
+    #                 ans[-1] = ans_conv
+
+    #         ans_convs.append(ans)
+
+    #     return self.out_activation(ans_convs[-1][0])
+
+    def forward(self, pos, feats, idx, dens, pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans, training=True, **kwargs):
+        # pos, feats, idx, dens = prev
 
         if not self.use_bnds:
             feats = feats[:tf.shape(pos[0])[0]]

@@ -249,8 +249,9 @@ class PBFNet(BaseModel):
         vel = (pos - pos1) / dt
         return pos, vel
 
-    def transform(self, data, training=True, **kwargs):
-        pos, vel, acc, feats, box, bfeats = data
+    def transform(self, pos, vel, acc, feats, box, bfeats, training=True, **kwargs):
+    # def transform(self, pos, vel, acc, feats, box, bfeats, training=True, **kwargs):
+        # pos, vel, acc, feats, box, bfeats = data
 
         if "translate" in self.transformation:
             translate = tf.constant(self.transformation["translate"],
@@ -277,31 +278,32 @@ class PBFNet(BaseModel):
             box = tf.linalg.matmul(box, self.R)
             bfeats = tf.linalg.matmul(bfeats, self.R)
 
-        return [pos, vel, acc, feats, box, bfeats]
+        # return [pos, vel, acc, feats, box, bfeats]
+        return pos, vel, acc, feats, box, bfeats
 
-    def inv_transform(self, prev, data, **kwargs):
-        pos, vel = prev
+    def inv_transform(self, pos2_corrected, vel2_corrected, pos, vel, acc, feats, box, bfeats, **kwargs):
+        # pos, vel = prev
 
         if "grav_eqvar" in self.transformation:
             # WARNING: assuming same gravity for all particles for one sequence
             R = tf.transpose(self.R)
-            pos = tf.linalg.matmul(pos, R)
-            vel = tf.linalg.matmul(vel, R)
+            pos2_corrected = tf.linalg.matmul(pos2_corrected, R)
+            vel2_corrected = tf.linalg.matmul(vel2_corrected, R)
 
         if "scale" in self.transformation:
             scale = tf.constant(self.transformation["scale"], tf.float32)
-            pos /= tf.maximum(scale, 1e-5)
-            vel /= tf.maximum(scale, 1e-5)
+            pos2_corrected /= tf.maximum(scale, 1e-5)
+            vel2_corrected /= tf.maximum(scale, 1e-5)
 
         if "translate" in self.transformation:
             translate = tf.constant(self.transformation["translate"],
                                     tf.float32)
-            pos -= translate
+            pos2_corrected -= translate
 
-        return pos, vel
+        return pos2_corrected, vel2_corrected
 
     def preprocess(self,
-                   data,
+                   _pos, _vel, acc, feats, box, bfeats,
                    training=True,
                    vel_corr=None,
                    tape=None,
@@ -309,7 +311,7 @@ class PBFNet(BaseModel):
         #
         # advection step
         #
-        _pos, _vel, acc, feats, box, bfeats = data
+        # _pos, _vel, acc, feats, box, bfeats = data
 
         if vel_corr is not None:
             vel = tf.stop_gradient(vel_corr)
@@ -435,22 +437,23 @@ class PBFNet(BaseModel):
             dens = None
 
         self.dilated_pos = dilated_pos
-        return [dilated_pos, fluid_feats, idx, dens]
+        # return [dilated_pos, fluid_feats, idx, dens]
+        return dilated_pos, fluid_feats, idx, dens
 
-    def postprocess(self, prev, data, training=True, vel_corr=None, **kwargs):
+    def postprocess(self, prev, pos, vel, acc, training=True, vel_corr=None, **kwargs):
         #
         # postprocess output of network
         #
-        pos, vel, acc = data[:3]
+        # pos, vel, acc = data[:3]
 
         pcnt = tf.shape(pos)[0]
 
         # compute the number of fluid neighbors.
         # this info is used in the loss function during training.
-        self.num_fluid_neighbors = o3dml.ops.reduce_subarrays_sum(
-            tf.ones_like(self.fluid_convs.nns.neighbors_index,
-                         dtype=tf.float32),
-            self.fluid_convs.nns.neighbors_row_splits)[:pcnt]
+        # self.num_fluid_neighbors = o3dml.ops.reduce_subarrays_sum(
+        #     tf.ones_like(self.fluid_convs.nns.neighbors_index,
+        #                  dtype=tf.float32),
+        #     self.fluid_convs.nns.neighbors_row_splits)[:pcnt]
 
         out = prev
         if self.equivar:
@@ -486,7 +489,8 @@ class PBFNet(BaseModel):
         pos2_corrected, vel2_corrected = self.compute_new_pos_vel(
             pos, vel, pos2, vel2, self.pos_correction)
 
-        return [pos2_corrected, vel2_corrected]
+        # return [pos2_corrected, vel2_corrected]
+        return pos2_corrected, vel2_corrected
 
     def loss_keys(self):
         return self.loss_fn.keys()

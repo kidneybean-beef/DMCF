@@ -88,14 +88,15 @@ class ModelOptimizer():
                                                                        maximum_cached_engines=28)
 
         self.converter = tf_trt.TrtGraphConverterV2(input_saved_model_dir=self.input_saved_model_dir,
-                                conversion_params=conversion_params)
+                                conversion_params=conversion_params, use_dynamic_shape=True,
+                                dynamic_shape_profile_strategy="Optimal")
         
         if precision == "INT8":
             self.converter.convert(calibration_input_fn=self.calibration_data)
             self.converter.summary()
         else:
             self.converter.convert()
-            # self.converter.summary()
+            self.converter.summary()
             
         self.converter.save(output_saved_model_dir=output_saved_model_dir)
         

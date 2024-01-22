@@ -60,7 +60,7 @@ class Simulator(BasePipeline):
         # self.prev_model=None
         # self.prev_run_inference=None
 
-    @tf.function(experimental_relax_shapes=True)
+    @tf.function(reduce_retracing=True)
     def run_inference(self, inputs):
         """
         Run inference on a given data.
@@ -72,11 +72,11 @@ class Simulator(BasePipeline):
         """
         results = []
         for bi in range(len(inputs)):
-            pos, vel = self.model(inputs[bi], training=False)
+            pos, vel = self.model(inputs[bi][0], inputs[bi][1], inputs[bi][2], inputs[bi][3], inputs[bi][4], inputs[bi][5], training=False)
             results.append([pos, vel] + inputs[bi][2:])
         return results
 
-    @tf.function(experimental_relax_shapes=True)
+    @tf.function(reduce_retracing=True)
     def run_inference_retraced(self, inputs):
         """
         Run inference on a given data.
@@ -88,7 +88,10 @@ class Simulator(BasePipeline):
         """
         results = []
         for bi in range(len(inputs)):
-            pos, vel = self.model(inputs[bi], training=False)
+            # pos, vel = self.model(inputs[bi], training=False)
+            output = self.model(pos=inputs[bi][0], vel=inputs[bi][1], acc=inputs[bi][2], feats=inputs[bi][3], box=inputs[bi][4], bfeats=inputs[bi][5], training=False)
+            pos = output['output_0']
+            vel = output['output_1']
             results.append([pos, vel] + inputs[bi][2:])
         return results
 
@@ -105,11 +108,34 @@ class Simulator(BasePipeline):
         inputs = [[
             tf.convert_to_tensor(data['pos'][0]),
             tf.convert_to_tensor(data['vel'][0]),
-            tf.convert_to_tensor(data["grav"][0])
-            if data["grav"][0] is not None else None, None,
+            tf.convert_to_tensor(data["grav"][0]) if data["grav"][0] is not None else None, 
+            tf.constant(0.0),
             tf.convert_to_tensor(data["box"][0]),
             tf.convert_to_tensor(data["box_normals"][0])
         ] for data in inputs]
+
+        # input_pos=[]
+        # input_vel=[]
+        # input_acc=[]
+        # input_feats=[]
+        # input_box=[]
+        # input_bfeats=[]
+
+        # for data in inputs:
+        #     input_pos.append(tf.convert_to_tensor(data['pos'][0]))
+        #     input_vel.append(tf.convert_to_tensor(data['vel'][0]))
+        #     input_acc.append(tf.convert_to_tensor(data['grav'][0]) if data["grav"][0] is not None else tf.constant(0.0)) 
+        #     input_feats.append(tf.constant(0.0))
+        #     input_box.append(tf.convert_to_tensor(data["box"][0]))
+        #     input_bfeats.append(tf.convert_to_tensor(data["box_normals"][0]))
+
+        # input_pos = [tf.convert_to_tensor(data['pos'][0]) for data in inputs]
+        # input_vel = [tf.convert_to_tensor(data['vel'][0]) for data in inputs]
+        # input_acc = [tf.convert_to_tensor(data['grav'][0]) if data["grav"][0] is not None else tf.constant(0.0) for data in inputs]
+        # input_feats = [tf.constant(0.0) for data in inputs]
+        # input_box = [tf.convert_to_tensor(data['box'][0]) for data in inputs]
+        # input_bfeats = [tf.convert_to_tensor(data['box_normals'][0]) for data in inputs]
+
         results = [[] for _ in range(len(inputs))]
 
         # dummy init
@@ -143,8 +169,8 @@ class Simulator(BasePipeline):
         inputs = [ [
             tf.convert_to_tensor(data['pos'][0]),
             tf.convert_to_tensor(data['vel'][0]),
-            tf.convert_to_tensor(data["grav"][0])
-            if data["grav"][0] is not None else None, None,
+            tf.convert_to_tensor(data["grav"][0]) if data["grav"][0] is not None else None,
+            tf.constant(0.0),
             tf.convert_to_tensor(data["box"][0]),
             tf.convert_to_tensor(data["box_normals"][0])
         ] for data in inputs]
@@ -153,18 +179,23 @@ class Simulator(BasePipeline):
         # dummy init
         self.run_inference_retraced(inputs[:1])
 
-        timing = []
-        for i in range(len(inputs)):
-            results[i].append(inputs[i])
-        for t in tqdm(range(timesteps - 1), "rollout"):
-            start = time.time()
-            for i in range(len(inputs)):
-                inputs[i] = self.run_inference_retraced(inputs[i:i + 1])[0]
-            end = time.time()
-            timing.append(end - start)
+        # allow TensorRT to build engine, the building time is excluded from profiling.
+        time.sleep(40)
+
+        with tf.profiler.experimental.Profile(self.cfg.profile_dir):
+
+            timing = []
             for i in range(len(inputs)):
                 results[i].append(inputs[i])
-        log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))
+            for t in tqdm(range(timesteps - 1), "rollout"):
+                start = time.time()
+                for i in range(len(inputs)):
+                    inputs[i] = self.run_inference_retraced(inputs[i:i + 1])[0]
+                end = time.time()
+                timing.append(end - start)
+                for i in range(len(inputs)):
+                    results[i].append(inputs[i])
+            log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))
 
         return results
 
@@ -191,9 +222,13 @@ class Simulator(BasePipeline):
 
         log.info("Started testing")
 
+        ### PROFILING ###
         with tf.profiler.experimental.Profile(cfg.profile_dir):
             results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
             pass
+        ### PROFILING ###
+
+        # results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
 
         ### CPU time for a sigle step ###
         # start = time.time()
@@ -212,22 +247,40 @@ class Simulator(BasePipeline):
          tf.TensorSpec(shape=(None,3), dtype=tf.float32),
          tf.TensorSpec(shape=(None,3), dtype=tf.float32)]
 
-        call=model.call.get_concrete_function(spec,training=False)
+        call=model.call.get_concrete_function(
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=None, dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),training=tf.TensorSpec(shape=(),dtype=tf.bool))
         # print(call)
 
         model_dir = 'saved_models/model'
         tf.saved_model.save(model,model_dir,signatures=call)
+
+        ### TEST LOADED MODEL ###
+        # loaded_model = tf.saved_model.load(model_dir)
+        # self.model=loaded_model.signatures["serving_default"]
+        # results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
+        # with tf.profiler.experimental.Profile(cfg.profile_dir):
+        #     results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
+        #     pass
+        ### TEST LOADED MODEL ###
 
         opt_model = ModelOptimizer(model_dir)
         model_fp32 = opt_model.convert(output_saved_model_dir=model_dir+'_trt_FP_32', precision=PRECISION)
 
         # self.prev_model =self.model
         # self.prev_run_inference=self.run_inference
-        self.model=model_fp32.loaded_model_fn.call
+        # self.model=model_fp32.loaded_model_fn.call
+        self.model=model_fp32.call
 
-        with tf.profiler.experimental.Profile(cfg.profile_dir):
-            results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
-            pass
+        # with tf.profiler.experimental.Profile(cfg.profile_dir):
+        #     results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
+        #     pass
+
+        results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
 
         ### WRITE OUT ###
         # for i in tqdm(range(len(results)), desc='write out'):

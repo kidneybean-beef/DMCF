@@ -21,14 +21,47 @@ class BaseModel(ABC, tf.keras.Model):
         self.cfg = Config(kwargs)
 
     # to save the call function in the saved model, it has to be declared as '@tf.function'
-    @tf.function
-    def call(self, data, training=True, **kwargs):
-        d = self.transform(data, training=training, **kwargs)
-        x = self.preprocess(d, training=training, **kwargs)
-        x = self.forward(x, d, training=training, **kwargs)
-        x = self.postprocess(x, d, training=training, **kwargs)
-        x = self.inv_transform(x, data, training=training, **kwargs)
+
+    # def call(self, data, training=True, **kwargs):
+    @tf.function(input_signature=(
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=None, dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+         tf.TensorSpec(shape=(),dtype=tf.bool)),reduce_retracing=True)
+    def call(self, pos, vel, acc, feats, box, bfeats, training=False, **kwargs):
+        # data = [pos, vel, acc, feats, box, bfeats]
+
+        # d = self.transform(data, training=training, **kwargs)
+        # x = self.preprocess(d, training=training, **kwargs)
+        # x = self.forward(x, d, training=training, **kwargs)
+        # x = self.postprocess(x, d, training=training, **kwargs)
+        # x = self.inv_transform(x, data, training=training, **kwargs)
+
+        # pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans = self.transform(data, training=training, **kwargs)
+        # d = [pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans]
+        # dilated_pos, fluid_feats, idx, dens = self.preprocess(d, training=training, **kwargs)
+        # x = [dilated_pos, fluid_feats, idx, dens]
+        # dilated_pos, fluid_feats, idx, dens = self.forward(x, d, training=training, **kwargs)
+        # x = [dilated_pos, fluid_feats, idx, dens]
+        # pos2_corrected, vel2_corrected = self.postprocess(x, d, training=training, **kwargs)
+        # x = [pos2_corrected, vel2_corrected]
+        # x = self.inv_transform(x, data, training=training, **kwargs)
+
+        pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans = self.transform(pos, vel, acc, feats, box, bfeats, training=training, **kwargs)
+        # d = [pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans]
+        dilated_pos, fluid_feats, idx, dens = self.preprocess(pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans, training=training, **kwargs)
+        # x = [dilated_pos, fluid_feats, idx, dens]
+        pos_fwd = self.forward(dilated_pos, fluid_feats, idx, dens, pos_trans, vel_trans, acc_trans, feats_trans, box_trans, bfeats_trans, training=training, **kwargs)
+        # x = [dilated_pos, fluid_feats, idx, dens]
+        pos2_corrected, vel2_corrected = self.postprocess(pos_fwd, pos_trans, vel_trans, acc_trans, training=training, **kwargs)
+        # x = [pos2_corrected, vel2_corrected]
+        x = self.inv_transform(pos2_corrected, vel2_corrected, pos, vel, acc, feats, box, bfeats, training=training, **kwargs)
+        # x = self.inv_transform(x, data, training=training, **kwargs)
         return x
+        # return x['output_1'], x['output_2']
 
     @abstractmethod
     def forward(self, prev, data, training=True, **kwargs):
@@ -61,6 +94,7 @@ class BaseModel(ABC, tf.keras.Model):
         return
 
     def transform(self, data, training=True, **kwargs):
+    # def transform(self, pos, vel, acc, feats, box, bfeats, training=True, **kwargs):
         """Transformation step.
 
         Args:
