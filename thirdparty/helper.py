@@ -102,6 +102,9 @@ class ModelOptimizer():
         
 
         return OptimizedModel(output_saved_model_dir)
+    
+    def load_optimized_model(self,load_saved_model_dir):
+        return OptimizedModel(load_saved_model_dir)
 
     def save(self, output_saved_model_dir):
         self.converter.save(output_saved_model_dir=output_saved_model_dir)

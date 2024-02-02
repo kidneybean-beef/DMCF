@@ -105,54 +105,59 @@ class Simulator(BasePipeline):
             Returns the inference results.
         """
 
+        num_particles = 10000
+        num_box = -1
+
         inputs = [[
-            tf.convert_to_tensor(data['pos'][0]),
-            tf.convert_to_tensor(data['vel'][0]),
-            tf.convert_to_tensor(data["grav"][0]) if data["grav"][0] is not None else None, 
-            tf.constant(0.0),
-            tf.convert_to_tensor(data["box"][0]),
-            tf.convert_to_tensor(data["box_normals"][0])
+            tf.convert_to_tensor(data['pos'][0][0:num_particles]),
+            tf.convert_to_tensor(data['vel'][0][0:num_particles]),
+            tf.convert_to_tensor(data["grav"][0][0:num_particles]) if data["grav"][0] is not None else tf.tile(tf.constant([[0.0,self.model.grav,0.0]]),[data['pos'][0].shape[0],1])[0:num_particles], 
+            tf.constant([0.0]),
+            tf.convert_to_tensor(data["box"][0][0:num_box]),
+            tf.convert_to_tensor(data["box_normals"][0][0:num_box])
         ] for data in inputs]
 
-        # input_pos=[]
-        # input_vel=[]
-        # input_acc=[]
-        # input_feats=[]
-        # input_box=[]
-        # input_bfeats=[]
-
-        # for data in inputs:
-        #     input_pos.append(tf.convert_to_tensor(data['pos'][0]))
-        #     input_vel.append(tf.convert_to_tensor(data['vel'][0]))
-        #     input_acc.append(tf.convert_to_tensor(data['grav'][0]) if data["grav"][0] is not None else tf.constant(0.0)) 
-        #     input_feats.append(tf.constant(0.0))
-        #     input_box.append(tf.convert_to_tensor(data["box"][0]))
-        #     input_bfeats.append(tf.convert_to_tensor(data["box_normals"][0]))
-
-        # input_pos = [tf.convert_to_tensor(data['pos'][0]) for data in inputs]
-        # input_vel = [tf.convert_to_tensor(data['vel'][0]) for data in inputs]
-        # input_acc = [tf.convert_to_tensor(data['grav'][0]) if data["grav"][0] is not None else tf.constant(0.0) for data in inputs]
-        # input_feats = [tf.constant(0.0) for data in inputs]
-        # input_box = [tf.convert_to_tensor(data['box'][0]) for data in inputs]
-        # input_bfeats = [tf.convert_to_tensor(data['box_normals'][0]) for data in inputs]
+        # inputs = [[
+        #     tf.convert_to_tensor(data['pos'][0]),
+        #     tf.convert_to_tensor(data['vel'][0]),
+        #     tf.convert_to_tensor(data["grav"][0]) if data["grav"][0] is not None else None, 
+        #     tf.constant(0.0),
+        #     tf.convert_to_tensor(data["box"][0]),
+        #     tf.convert_to_tensor(data["box_normals"][0])
+        # ] for data in inputs]
 
         results = [[] for _ in range(len(inputs))]
 
         # dummy init
         self.run_inference(inputs[:1])
 
-        timing = []
-        for i in range(len(inputs)):
-            results[i].append(inputs[i])
-        for t in tqdm(range(timesteps - 1), "rollout"):
-            start = time.time()
-            for i in range(len(inputs)):
-                inputs[i] = self.run_inference(inputs[i:i + 1])[0]
-            end = time.time()
-            timing.append(end - start)
+        if self.cfg.run_profile is True:
+            with tf.profiler.experimental.Profile(self.cfg.profile_dir):
+                timing = []
+                for i in range(len(inputs)):
+                    results[i].append(inputs[i])
+                for t in tqdm(range(timesteps - 1), "rollout"):
+                    start = time.time()
+                    for i in range(len(inputs)):
+                        inputs[i] = self.run_inference(inputs[i:i + 1])[0]
+                    end = time.time()
+                    timing.append(end - start)
+                    for i in range(len(inputs)):
+                        results[i].append(inputs[i])
+                log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))
+        else:
+            timing = []
             for i in range(len(inputs)):
                 results[i].append(inputs[i])
-        log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))
+            for t in tqdm(range(timesteps - 1), "rollout"):
+                start = time.time()
+                for i in range(len(inputs)):
+                    inputs[i] = self.run_inference(inputs[i:i + 1])[0]
+                end = time.time()
+                timing.append(end - start)
+                for i in range(len(inputs)):
+                    results[i].append(inputs[i])
+            log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))            
 
         return results
 
@@ -166,13 +171,16 @@ class Simulator(BasePipeline):
             Returns the inference results.
         """
 
-        inputs = [ [
-            tf.convert_to_tensor(data['pos'][0]),
-            tf.convert_to_tensor(data['vel'][0]),
-            tf.convert_to_tensor(data["grav"][0]) if data["grav"][0] is not None else None,
-            tf.constant(0.0),
-            tf.convert_to_tensor(data["box"][0]),
-            tf.convert_to_tensor(data["box_normals"][0])
+        num_particles = 10000
+        num_box = -1
+
+        inputs = [[
+            tf.convert_to_tensor(data['pos'][0][0:num_particles]),
+            tf.convert_to_tensor(data['vel'][0][0:num_particles]),
+            tf.convert_to_tensor(data["grav"][0][0:num_particles]) if data["grav"][0] is not None else tf.tile(tf.constant([[0.0,-9.81,0.0]]),[data['pos'][0].shape[0],1])[0:num_particles], 
+            tf.constant([0.0]),
+            tf.convert_to_tensor(data["box"][0][0:num_box]),
+            tf.convert_to_tensor(data["box_normals"][0][0:num_box])
         ] for data in inputs]
         results = [[] for _ in range(len(inputs))]
 
@@ -182,8 +190,21 @@ class Simulator(BasePipeline):
         # allow TensorRT to build engine, the building time is excluded from profiling.
         time.sleep(40)
 
-        with tf.profiler.experimental.Profile(self.cfg.profile_dir):
-
+        if self.cfg.run_profile is True:
+            with tf.profiler.experimental.Profile(self.cfg.profile_dir):
+                timing = []
+                for i in range(len(inputs)):
+                    results[i].append(inputs[i])
+                for t in tqdm(range(timesteps - 1), "rollout"):
+                    start = time.time()
+                    for i in range(len(inputs)):
+                        inputs[i] = self.run_inference_retraced(inputs[i:i + 1])[0]
+                    end = time.time()
+                    timing.append(end - start)
+                    for i in range(len(inputs)):
+                        results[i].append(inputs[i])
+                log.info("Average runtime: %.05f" % (np.mean(timing) / len(inputs)))
+        else:
             timing = []
             for i in range(len(inputs)):
                 results[i].append(inputs[i])
@@ -220,99 +241,87 @@ class Simulator(BasePipeline):
         if epoch is None:
             epoch = self.load_ckpt(model.cfg.ckpt_path)
 
-        log.info("Started testing")
+        log.info("Started testing original")
+        results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
 
         ### PROFILING ###
-        with tf.profiler.experimental.Profile(cfg.profile_dir):
-            results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
-            pass
+        # with tf.profiler.experimental.Profile(cfg.profile_dir):
+        #     results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
+        #     pass
         ### PROFILING ###
-
-        # results = self.run_rollout(test_data, test_data[0]["pos"].shape[0])
-
-        ### CPU time for a sigle step ###
-        # start = time.time()
-        # for bi in range(len(inputs[:1])):
-        #     pos, vel = self.model(inputs[bi], training=False)
-        # end = time.time()
-        # elapsed_time = end - start
-        # log.info("inference time: %f" % elapsed_time)
-        ### CPU time for a sigle step ###
-
-        # input shape specification: [pos,vel,grav,None(another fluid feature),box,box_normal(box feature)]
-        spec = [tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=None, dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32)]
-
-        call=model.call.get_concrete_function(
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=None, dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None,3), dtype=tf.float32),training=tf.TensorSpec(shape=(),dtype=tf.bool))
-        # print(call)
 
         model_dir = 'saved_models/model'
-        tf.saved_model.save(model,model_dir,signatures=call)
 
-        ### TEST LOADED MODEL ###
-        # loaded_model = tf.saved_model.load(model_dir)
-        # self.model=loaded_model.signatures["serving_default"]
-        # results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
-        # with tf.profiler.experimental.Profile(cfg.profile_dir):
-        #     results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
-        #     pass
-        ### TEST LOADED MODEL ###
+        # ### TEST LOADED MODEL ###
+        # # loaded_model = tf.saved_model.load(model_dir)
+        # # self.model=loaded_model.signatures["serving_default"]
+        # # results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
+        # # with tf.profiler.experimental.Profile(cfg.profile_dir):
+        # #     results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
+        # #     pass
+        # ### TEST LOADED MODEL ###
 
         opt_model = ModelOptimizer(model_dir)
-        model_fp32 = opt_model.convert(output_saved_model_dir=model_dir+'_trt_FP_32', precision=PRECISION)
+        if cfg.using_saved_model is True:
+            model_fp32 = opt_model.load_optimized_model(model_dir+'_trt_FP_32')
+            self.model=model_fp32.call
+        else:
+            # input shape specification: [pos,vel,grav,None(another fluid feature),box,box_normal(box feature)]
+            # input_spec = [
+            #     tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+            #     tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+            #     tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+            #     tf.TensorSpec(shape=None, dtype=tf.float32),
+            #     tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+            #     tf.TensorSpec(shape=(None,3), dtype=tf.float32)]
 
-        # self.prev_model =self.model
-        # self.prev_run_inference=self.run_inference
-        # self.model=model_fp32.loaded_model_fn.call
-        self.model=model_fp32.call
+            call=model.call.get_concrete_function(tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+                tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+                tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+                tf.TensorSpec(shape=None, dtype=tf.float32),
+                tf.TensorSpec(shape=(None,3), dtype=tf.float32),
+                tf.TensorSpec(shape=(None,3), dtype=tf.float32),training=tf.TensorSpec(shape=(),dtype=tf.bool))
+            tf.saved_model.save(model,model_dir,signatures=call)
+            model_fp32 = opt_model.convert(output_saved_model_dir=model_dir+'_trt_FP_32', precision=PRECISION)
+            self.model=model_fp32.call
 
-        # with tf.profiler.experimental.Profile(cfg.profile_dir):
-        #     results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
-        #     pass
-
+        log.info("Started testing trt engine")
         results = self.run_rollout_retraced(test_data, test_data[0]["pos"].shape[0])
 
         ### WRITE OUT ###
-        # for i in tqdm(range(len(results)), desc='write out'):
-        #     data = test_data[i]
-        #     pos = np.stack(r[0] for r in results[i])
+        
+        if cfg.write_out is True:
+            for i in tqdm(range(len(results)), desc='write out'):
+                data = test_data[i]
+                pos = np.stack([r[0] for r in results[i]])
 
-        #     out_dir = os.path.join(self.cfg.out_dir, "visual", "%04d" % i)
-        #     if not os.path.exists(out_dir):
-        #         os.makedirs(out_dir)
+                out_dir = os.path.join(self.cfg.out_dir, "visual", "%04d" % i)
+                if not os.path.exists(out_dir):
+                    os.makedirs(out_dir)
 
-        #     output = [(pos, {
-        #         "name": "pred",
-        #         "type": "PARTICLE"
-        #     }), (data['pos'], {
-        #         "name": "gt",
-        #         "type": "PARTICLE"
-        #     }), (data['box'][0], {
-        #         "name": "bnd",
-        #         "type": "PARTICLE"
-        #     })]
+                output = [(pos, {
+                    "name": "pred",
+                    "type": "PARTICLE"
+                }), (data['pos'], {
+                    "name": "gt",
+                    "type": "PARTICLE"
+                }), (data['box'][0], {
+                    "name": "bnd",
+                    "type": "PARTICLE"
+                })]
 
-        #     write_results(os.path.join(out_dir, '%04d.hdf5' % epoch),
-        #                   self.model.name, output)
+                write_results(os.path.join(out_dir, '%04d.hdf5' % epoch),
+                            self.model.name, output)
 
-        #     for f in glob(os.path.join(out_dir, '*.hdf5')):
-        #         if f != os.path.join(out_dir, '%04d.hdf5' % epoch):
-        #             log.info("Remove %s" %
-        #                      os.path.join(out_dir, '%04d.hdf5' % epoch))
-        #             os.remove(f)
+                for f in glob(os.path.join(out_dir, '*.hdf5')):
+                    if f != os.path.join(out_dir, '%04d.hdf5' % epoch):
+                        log.info("Remove %s" %
+                                os.path.join(out_dir, '%04d.hdf5' % epoch))
+                        os.remove(f)
 
-        # if cfg.get('test_compute_metric', False):
-        #     self.run_valid(epoch)
+        if cfg.get('test_compute_metric', False):
+            self.run_valid(epoch)
+
         ### WRITE OUT ###
 
     def run_valid(self, epoch=None):

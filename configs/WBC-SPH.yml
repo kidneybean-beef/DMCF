@@ -95,9 +95,12 @@ pipeline:
 
   main_log_dir: ./logs
   train_sum_dir: ./train_log
+  run_profile: True
   profile_dir: ./profile_log
   output_dir: ./output
   save_ckpt_freq: 1
+  using_saved_model: True
+  write_out: True
 
   # metrics:
   #   dens_val:
@@ -159,7 +162,7 @@ pipeline:
     test:
       stride: 1
       time_start: 0
-      time_end: 400
+      time_end: 200
 
 
       
